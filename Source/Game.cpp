@@ -1,11 +1,15 @@
 #include "Game.h"
-
 #include <d3dx12.h>
 #include <dxcapi.h>
+#include <DirectXColors.h>
+#include <DirectXMath.h>
 
 #pragma comment(lib, "d3d12")
 #pragma comment(lib, "dxgi")
 #pragma comment(lib, "dxcompiler")
+
+using namespace std;
+using namespace DirectX;
 
 Game::Game(HWND hWnd)
 {
@@ -22,7 +26,7 @@ Game::~Game()
 
 void Game::Init()
 {
-	//mAudio.Play();
+	mAudio.Play();
 
 #ifdef _DEBUG
 	ID3D12Debug* debug;
@@ -82,8 +86,30 @@ void Game::Init()
 
 int Game::Run()
 {
-	MSG msg;
-	return 0;
+	MSG msg = {};
+
+	mTimer.Reset();
+
+	while (msg.message != WM_QUIT)
+	{
+		if (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE) != 0)
+		{
+			TranslateMessage(&msg);
+			DispatchMessage(&msg);
+		}
+		else
+		{
+			if (!mGamePaused)
+			{
+				mTimer.Tick();
+				Fps();
+				Update();
+				Draw();
+			}
+		}
+	}
+
+	return (int)msg.wParam;
 }
 
 void Game::Resize()
@@ -94,9 +120,9 @@ void Game::Resize()
 
 	for (int i = 0; i < BACK_BUFFER_COUNT; i++)
 	{
-		if (mBackBuffer[i])
+		if (mBackBuffers[i])
 		{
-			mBackBuffer[i]->Release();
+			mBackBuffers[i]->Release();
 		}
 	}
 	if (mDepthStencilBuffer)
@@ -111,12 +137,12 @@ void Game::Resize()
 	CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHeapHandle(mRtvHeap->GetCPUDescriptorHandleForHeapStart());
 	for (int i = 0; i < BACK_BUFFER_COUNT; i++)
 	{
-		mSwapChain->GetBuffer(i, IID_PPV_ARGS(&mBackBuffer[i]));
-		mDevice->CreateRenderTargetView(mBackBuffer[i], NULL, rtvHeapHandle);
+		mSwapChain->GetBuffer(i, IID_PPV_ARGS(&mBackBuffers[i]));
+		mDevice->CreateRenderTargetView(mBackBuffers[i], NULL, rtvHeapHandle);
 		rtvHeapHandle.Offset(1, mRtvIncrementSize);
 	}
 
-	CD3DX12_HEAP_PROPERTIES heapProperties(D3D12_HEAP_TYPE_DEFAULT);
+	D3D12_HEAP_PROPERTIES heapProperties = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
 
 	D3D12_RESOURCE_DESC depthStencilDesc = {};
 	depthStencilDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
@@ -140,11 +166,11 @@ void Game::Resize()
 
 	mDevice->CreateDepthStencilView(mDepthStencilBuffer, NULL, mDsvHeap->GetCPUDescriptorHandleForHeapStart());
 
-	CD3DX12_RESOURCE_BARRIER resourceBarrier = CD3DX12_RESOURCE_BARRIER::Transition(mDepthStencilBuffer, D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_DEPTH_WRITE);
+	D3D12_RESOURCE_BARRIER resourceBarrier = CD3DX12_RESOURCE_BARRIER::Transition(mDepthStencilBuffer, D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_DEPTH_WRITE);
 	mCommandList->ResourceBarrier(1, &resourceBarrier);
 
 	mCommandList->Close();
-	mCommandQueue->ExecuteCommandLists(1, (ID3D12CommandList**)&mCommandList);
+	mCommandQueue->ExecuteCommandLists(1, CommandListCast<ID3D12GraphicsCommandList>(&mCommandList));
 
 	FlushCommandQueue();
 
@@ -185,7 +211,7 @@ void Game::CreateSwapChain()
 	// DXGI_SWAP_EFFECT_FLIP_* swapchains do not support MSAA directly. You must always create a single-sample swapchain, then create your own MSAA render target which you explicitly resolve to the swapchain buffer.
 	mFactory->CreateSwapChain(mCommandQueue, &scd, &mSwapChain);
 
-	mFactory->MakeWindowAssociation(mhWnd, DXGI_MWA_NO_ALT_ENTER);
+	mFactory->MakeWindowAssociation(mhWnd, DXGI_MWA_NO_WINDOW_CHANGES | DXGI_MWA_NO_ALT_ENTER);
 }
 
 void Game::FlushCommandQueue()
@@ -204,4 +230,70 @@ void Game::FlushCommandQueue()
 
 		CloseHandle(hEvent);
 	}
+}
+
+void Game::Fps()
+{
+	static double totalSeconds = 0.0;
+	static int totalFrames = 0;
+
+	totalFrames++;
+
+	if ((mTimer.TotalTime() - totalSeconds) >= 1.0)
+	{
+		SetWindowText(mhWnd, to_wstring(totalFrames).c_str());
+
+		totalSeconds += 1.0;
+		totalFrames = 0;
+	}
+}
+
+void Game::Update()
+{
+}
+
+void Game::Draw()
+{
+	mCommandAllocator->Reset();
+	mCommandList->Reset(mCommandAllocator, NULL);
+
+	D3D12_RESOURCE_BARRIER resourceBarrier = CD3DX12_RESOURCE_BARRIER::Transition(CurrBackBuffer(), D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
+	mCommandList->ResourceBarrier(1, &resourceBarrier);
+
+	mCommandList->RSSetViewports(1, &mViewport);
+	mCommandList->RSSetScissorRects(1, &mScissorRect);
+
+	D3D12_CPU_DESCRIPTOR_HANDLE currRenderTargetDescriptor = CurrRenderTargetDescriptor();
+	D3D12_CPU_DESCRIPTOR_HANDLE depthStencilDescriptor = DepthStencilDescriptor();
+
+	mCommandList->ClearRenderTargetView(currRenderTargetDescriptor, Colors::LightBlue, 0, NULL);
+	mCommandList->ClearDepthStencilView(depthStencilDescriptor, D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, NULL);
+
+	mCommandList->OMSetRenderTargets(1, &currRenderTargetDescriptor, TRUE, &depthStencilDescriptor);
+
+	resourceBarrier = CD3DX12_RESOURCE_BARRIER::Transition(CurrBackBuffer(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
+	mCommandList->ResourceBarrier(1, &resourceBarrier);
+
+	mCommandList->Close();
+	mCommandQueue->ExecuteCommandLists(1, CommandListCast<ID3D12GraphicsCommandList>(&mCommandList));
+
+	mSwapChain->Present(1, 0);
+	mCurrBackBufferIndex = (mCurrBackBufferIndex + 1) % BACK_BUFFER_COUNT;
+
+	FlushCommandQueue();
+}
+
+ID3D12Resource* Game::CurrBackBuffer()
+{
+	return mBackBuffers[mCurrBackBufferIndex];
+}
+
+D3D12_CPU_DESCRIPTOR_HANDLE Game::CurrRenderTargetDescriptor()
+{
+	return CD3DX12_CPU_DESCRIPTOR_HANDLE(mRtvHeap->GetCPUDescriptorHandleForHeapStart(), mCurrBackBufferIndex, mRtvIncrementSize);
+}
+
+D3D12_CPU_DESCRIPTOR_HANDLE Game::DepthStencilDescriptor()
+{
+	return mDsvHeap->GetCPUDescriptorHandleForHeapStart();
 }

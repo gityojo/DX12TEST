@@ -1,10 +1,9 @@
 #pragma once
 
-#include <d3d12.h>
-#include <dxgi.h>
-
 #include "Audio.h"
 #include "Timer.h"
+#include <d3d12.h>
+#include <dxgi.h>
 
 #define SAMPLE_COUNT 1
 #define BACK_BUFFER_COUNT 2
@@ -23,8 +22,11 @@ private:
 	void CreateSwapChain();
 	void FlushCommandQueue();
 	void Fps();
-	void Update(const double dt);
-	void Draw(const double dt);
+	void Update();
+	void Draw();
+	ID3D12Resource* CurrBackBuffer();
+	D3D12_CPU_DESCRIPTOR_HANDLE CurrRenderTargetDescriptor();
+	D3D12_CPU_DESCRIPTOR_HANDLE DepthStencilDescriptor();
 
 	IDXGIFactory* mFactory;
 	IDXGISwapChain* mSwapChain;
@@ -39,7 +41,7 @@ private:
 	ID3D12GraphicsCommandList* mCommandList;
 	ID3D12DescriptorHeap* mRtvHeap;
 	ID3D12DescriptorHeap* mDsvHeap;
-	ID3D12Resource* mBackBuffer[BACK_BUFFER_COUNT];
+	ID3D12Resource* mBackBuffers[BACK_BUFFER_COUNT];
 	ID3D12Resource* mDepthStencilBuffer;
 
 	D3D12_VIEWPORT mViewport;

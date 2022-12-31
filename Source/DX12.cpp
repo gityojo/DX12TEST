@@ -5,6 +5,8 @@
 #include "DX12.h"
 #include "Game.h"
 
+#define WIDTH 1920
+#define HEIGHT 1080
 #define MAX_LOADSTRING 100
 
 // Global Variables:
@@ -41,14 +43,12 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 	}
 
 	gpGame = new Game(ghWnd);
-
 	gpGame->Init();
+	int exitCode = gpGame->Run();
 
-	while (true) {}
+	delete gpGame;
 
-	// delete gpGame;
-
-	return 0;
+	return exitCode;
 }
 
 //
@@ -92,7 +92,7 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
 	ghInst = hInstance; // Store instance handle in our global variable
 
 	ghWnd = CreateWindowW(szWindowClass, szTitle, WS_OVERLAPPEDWINDOW,
-		CW_USEDEFAULT, 0, CW_USEDEFAULT, 0, nullptr, nullptr, hInstance, nullptr);
+		CW_USEDEFAULT, 0, WIDTH, HEIGHT, nullptr, nullptr, hInstance, nullptr);
 
 	if (!ghWnd)
 	{
