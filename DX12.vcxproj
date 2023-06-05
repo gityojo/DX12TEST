@@ -114,13 +114,14 @@
     <ClCompile>
       <WarningLevel>Level4</WarningLevel>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>_DEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_DEBUG;_WINDOWS;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>Header;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>Header;C:\DirectXTex-main\DirectXTex;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalLibraryDirectories>C:\DirectXTex-main\DirectXTex\Bin\Desktop_2022\x64\Debug;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
     <ResourceCompile>
       <AdditionalIncludeDirectories>Header;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
@@ -144,12 +145,21 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="Header\Audio.h" />
+    <ClInclude Include="Header\Camera.h" />
     <ClInclude Include="Header\DX12.h" />
+    <ClInclude Include="Header\FrameResource.h" />
     <ClInclude Include="Header\framework.h" />
     <ClInclude Include="Header\Game.h" />
+    <ClInclude Include="Header\Geometry.h" />
+    <ClInclude Include="Header\Maths.h" />
     <ClInclude Include="Header\Resource.h" />
+    <ClInclude Include="Header\Struct.h" />
     <ClInclude Include="Header\targetver.h" />
+    <ClInclude Include="Header\Tex.h" />
+    <ClInclude Include="Header\Tga.h" />
     <ClInclude Include="Header\Timer.h" />
+    <ClInclude Include="Header\Upload.h" />
+    <ClInclude Include="Header\Util.h" />
   </ItemGroup>
   <ItemGroup>
     <Image Include="Resource\DX12.ico" />
@@ -160,9 +170,35 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Source\Audio.cpp" />
+    <ClCompile Include="Source\Camera.cpp" />
     <ClCompile Include="Source\DX12.cpp" />
+    <ClCompile Include="Source\FrameResource.cpp" />
     <ClCompile Include="Source\Game.cpp" />
+    <ClCompile Include="Source\Geometry.cpp" />
+    <ClCompile Include="Source\Maths.cpp" />
+    <ClCompile Include="Source\Tex.cpp" />
+    <ClCompile Include="Source\Tga.cpp" />
     <ClCompile Include="Source\Timer.cpp" />
+    <ClCompile Include="Source\Util.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <FxCompile Include="Shader\PS.hlsl">
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Pixel</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">5.0</ShaderModel>
+      <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Shader/%(Filename).cso</ObjectFileOutput>
+      <EntryPointName Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">PS</EntryPointName>
+    </FxCompile>
+    <FxCompile Include="Shader\VS.hlsl">
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Vertex</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">5.0</ShaderModel>
+      <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Shader/%(Filename).cso</ObjectFileOutput>
+      <EntryPointName Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">VS</EntryPointName>
+    </FxCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Shader\Struct.hlsli">
+      <FileType>Document</FileType>
+    </None>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

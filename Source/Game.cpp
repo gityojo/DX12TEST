@@ -3,6 +3,7 @@
 #include <dxcapi.h>
 #include <DirectXColors.h>
 #include <DirectXMath.h>
+#include <array>
 
 #pragma comment(lib, "d3d12")
 #pragma comment(lib, "dxgi")
@@ -10,6 +11,8 @@
 
 using namespace std;
 using namespace DirectX;
+
+const int gNumFrameResources = 3;
 
 Game::Game(HWND hWnd)
 {
@@ -60,7 +63,7 @@ void Game::Init()
 
 	mDevice->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&mCommandAllocator));
 	
-	mDevice->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, mCommandAllocator, NULL, IID_PPV_ARGS(&mCommandList));
+	mDevice->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, mCommandAllocator, mPipelineState, IID_PPV_ARGS(&mCommandList));
 	mCommandList->Close();
 
 	CreateSwapChain();
@@ -82,6 +85,20 @@ void Game::Init()
 	mDevice->CreateDescriptorHeap(&dsvHeapDesc, IID_PPV_ARGS(&mDsvHeap));
 
 	Resize();
+
+	D3D12_DESCRIPTOR_HEAP_DESC cbvHeapDesc = {};
+	cbvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+	cbvHeapDesc.NumDescriptors = 1;
+	cbvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+	cbvHeapDesc.NodeMask = 0;
+
+	mDevice->CreateDescriptorHeap(&cbvHeapDesc, IID_PPV_ARGS(&mCbvHeap));
+
+	BuildConstantBuffers();
+	BuildRootSignature();
+	BuildShadersAndInputLayout();
+	BuildBox();
+	BuildPSO();
 }
 
 int Game::Run()
@@ -112,11 +129,16 @@ int Game::Run()
 	return (int)msg.wParam;
 }
 
+float Game::AspectRatio()
+{
+	return (float)mWidth / mHeight;
+}
+
 void Game::Resize()
 {
 	FlushCommandQueue();
 
-	mCommandList->Reset(mCommandAllocator, NULL);
+	mCommandList->Reset(mCommandAllocator, mPipelineState);
 
 	for (int i = 0; i < BACK_BUFFER_COUNT; i++)
 	{
@@ -185,6 +207,9 @@ void Game::Resize()
 	mScissorRect.top = 0;
 	mScissorRect.right = static_cast<LONG>(mWidth);
 	mScissorRect.bottom = static_cast<LONG>(mHeight);
+
+	XMMATRIX proj = XMMatrixPerspectiveFovLH(0.25f * Maths::Pi, AspectRatio(), 1.0f, 1000.0f);
+	XMStoreFloat4x4(&mProj, proj);
 }
 
 void Game::CreateSwapChain()
@@ -250,12 +275,29 @@ void Game::Fps()
 
 void Game::Update()
 {
+	mAngle -= 0.005f;
+	XMMATRIX world = XMMatrixRotationY(mAngle);
+
+	XMVECTOR eyePosition = XMVectorSet(0.0f, 0.0f, -4.4f, 1.0f);
+	XMVECTOR focusPosition = XMVectorZero();
+	XMVECTOR upDirection = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
+
+	XMMATRIX view = XMMatrixLookAtLH(eyePosition, focusPosition, upDirection);
+	XMStoreFloat4x4(&mView, view);
+
+	XMMATRIX proj = XMLoadFloat4x4(&mProj);
+
+	XMMATRIX worldViewProj = world * view * proj;
+
+	ObjectConstant objConstant;
+	XMStoreFloat4x4(&objConstant.WorldViewProj, XMMatrixTranspose(worldViewProj));
+	mObjectCB->CopyData(0, objConstant);
 }
 
 void Game::Draw()
 {
 	mCommandAllocator->Reset();
-	mCommandList->Reset(mCommandAllocator, NULL);
+	mCommandList->Reset(mCommandAllocator, mPipelineState);
 
 	D3D12_RESOURCE_BARRIER resourceBarrier = CD3DX12_RESOURCE_BARRIER::Transition(CurrBackBuffer(), D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
 	mCommandList->ResourceBarrier(1, &resourceBarrier);
@@ -271,6 +313,27 @@ void Game::Draw()
 
 	mCommandList->OMSetRenderTargets(1, &currRenderTargetDescriptor, TRUE, &depthStencilDescriptor);
 
+	ID3D12DescriptorHeap* descriptorHeaps[] = { mCbvHeap };
+	mCommandList->SetDescriptorHeaps(_countof(descriptorHeaps), descriptorHeaps);
+
+	mCommandList->SetGraphicsRootSignature(mRootSignature);
+	mCommandList->SetGraphicsRootDescriptorTable(0, mCbvHeap->GetGPUDescriptorHandleForHeapStart());
+
+	D3D12_VERTEX_BUFFER_VIEW vbv = mBox->VertexBufferView();
+	D3D12_INDEX_BUFFER_VIEW ibv = mBox->IndexBufferView();
+
+	mCommandList->IASetVertexBuffers(0, 1, &vbv);
+	mCommandList->IASetIndexBuffer(&ibv);
+
+	mCommandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+	mCommandList->DrawIndexedInstanced(
+		mBox->Submeshes["Box"].IndexCountPerInstance,
+		mBox->Submeshes["Box"].InstanceCount,
+		mBox->Submeshes["Box"].StartIndexLocation,
+		mBox->Submeshes["Box"].BaseVertexLocation,
+		mBox->Submeshes["Box"].StartInstanceLocation);
+
 	resourceBarrier = CD3DX12_RESOURCE_BARRIER::Transition(CurrBackBuffer(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
 	mCommandList->ResourceBarrier(1, &resourceBarrier);
 
@@ -281,6 +344,196 @@ void Game::Draw()
 	mCurrBackBufferIndex = (mCurrBackBufferIndex + 1) % BACK_BUFFER_COUNT;
 
 	FlushCommandQueue();
+}
+
+void Game::BuildConstantBuffers()
+{
+	mObjectCB = make_unique<Upload<ObjectConstant>>(mDevice, 1, true);
+
+	UINT cbByteSize = Util::CalcConstantBufferByteSize(sizeof(ObjectConstant));
+
+	D3D12_GPU_VIRTUAL_ADDRESS cbAddress = mObjectCB->Resource()->GetGPUVirtualAddress();
+	int boxCBIndex = 0;
+	cbAddress += boxCBIndex * cbByteSize;
+
+	D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc = {};
+	cbvDesc.BufferLocation = cbAddress;
+	cbvDesc.SizeInBytes = cbByteSize;
+
+	mDevice->CreateConstantBufferView(
+		&cbvDesc,
+		ConstantBufferDescriptor());
+}
+
+void Game::BuildRootSignature()
+{
+	CD3DX12_ROOT_PARAMETER slotRootParameter[1];
+
+	CD3DX12_DESCRIPTOR_RANGE cbvTable;
+	cbvTable.Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0);
+	slotRootParameter[0].InitAsDescriptorTable(1, &cbvTable);
+
+	CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(1, slotRootParameter, 0, NULL,
+		D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
+
+	ID3DBlob* serializedRootSig = NULL;
+	ID3DBlob* errorBlob = NULL;
+	D3D12SerializeRootSignature(&rootSigDesc, D3D_ROOT_SIGNATURE_VERSION_1, &serializedRootSig, &errorBlob);
+
+	if (errorBlob != NULL)
+	{
+		OutputDebugStringA((char*)errorBlob->GetBufferPointer());
+		return;
+	}
+
+	mDevice->CreateRootSignature(
+		0,
+		serializedRootSig->GetBufferPointer(),
+		serializedRootSig->GetBufferSize(),
+		IID_PPV_ARGS(&mRootSignature));
+}
+
+void Game::BuildShadersAndInputLayout()
+{
+	mVSByteCode = Util::LoadBinary(L"Shader/VS.cso");
+	mPSByteCode = Util::LoadBinary(L"Shader/PS.cso");
+
+	mInputElementDescs =
+	{
+		{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+		{ "COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }
+	};
+}
+
+void Game::BuildBox()
+{
+	array<Vertex, 8> vertices =
+	{
+		Vertex({ XMFLOAT3(-1.0f, -1.0f, -1.0f), XMFLOAT4(Colors::White) }),
+		Vertex({ XMFLOAT3(-1.0f, +1.0f, -1.0f), XMFLOAT4(Colors::Black) }),
+		Vertex({ XMFLOAT3(+1.0f, +1.0f, -1.0f), XMFLOAT4(Colors::Red) }),
+		Vertex({ XMFLOAT3(+1.0f, -1.0f, -1.0f), XMFLOAT4(Colors::Green) }),
+		Vertex({ XMFLOAT3(-1.0f, -1.0f, +1.0f), XMFLOAT4(Colors::Blue) }),
+		Vertex({ XMFLOAT3(-1.0f, +1.0f, +1.0f), XMFLOAT4(Colors::Yellow) }),
+		Vertex({ XMFLOAT3(+1.0f, +1.0f, +1.0f), XMFLOAT4(Colors::Cyan) }),
+		Vertex({ XMFLOAT3(+1.0f, -1.0f, +1.0f), XMFLOAT4(Colors::Magenta) })
+	};
+
+	array<uint16_t, 36> indices =
+	{
+		// front face
+		0, 1, 2,
+		0, 2, 3,
+
+		// back face
+		4, 6, 5,
+		4, 7, 6,
+
+		// left face
+		4, 5, 1,
+		4, 1, 0,
+
+		// right face
+		3, 2, 6,
+		3, 6, 7,
+
+		// top face
+		1, 5, 6,
+		1, 6, 2,
+
+		// bottom face
+		4, 0, 3,
+		4, 3, 7
+	};
+
+	const UINT vbByteSize = (UINT)vertices.size() * sizeof(Vertex);
+	const UINT ibByteSize = (UINT)indices.size() * sizeof(uint16_t);
+
+	mBox = make_unique<Mesh>();
+	mBox->Name = "Box";
+
+	mCommandList->Reset(mCommandAllocator, mPipelineState);
+
+	Util::CreateDefaultBuffer(mDevice, mCommandList, vertices.data(), vbByteSize,
+		mBox->VertexBufferUpload, mBox->VertexBufferDefault);
+
+	Util::CreateDefaultBuffer(mDevice, mCommandList, indices.data(), ibByteSize,
+		mBox->IndexBufferUpload, mBox->IndexBufferDefault);
+
+	mCommandList->Close();
+	mCommandQueue->ExecuteCommandLists(1, CommandListCast<ID3D12GraphicsCommandList>(&mCommandList));
+
+	mBox->VertexByteStride = sizeof(Vertex);
+	mBox->VertexBufferByteSize = vbByteSize;
+	mBox->IndexFormat = DXGI_FORMAT_R16_UINT;
+	mBox->IndexBufferByteSize = ibByteSize;
+
+	Submesh submesh = {};
+	submesh.IndexCountPerInstance = (UINT)indices.size();
+	submesh.InstanceCount = 1;
+	submesh.StartIndexLocation = 0;
+	submesh.BaseVertexLocation = 0;
+	submesh.StartInstanceLocation = 0;
+
+	mBox->Submeshes["Box"] = submesh;
+
+	FlushCommandQueue();
+}
+
+void Game::BuildPSO()
+{
+	D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc = {};
+
+	psoDesc.pRootSignature = mRootSignature;
+	psoDesc.VS =
+	{
+		mVSByteCode->GetBufferPointer(),
+		mVSByteCode->GetBufferSize()
+	};
+	psoDesc.PS =
+	{
+		mPSByteCode->GetBufferPointer(),
+		mPSByteCode->GetBufferSize()
+	};
+
+	D3D12_SHADER_BYTECODE shaderBytecode = {};
+	shaderBytecode.pShaderBytecode = NULL;
+	shaderBytecode.BytecodeLength = 0;
+
+	psoDesc.DS = shaderBytecode;
+	psoDesc.HS = shaderBytecode;
+	psoDesc.GS = shaderBytecode;
+
+	D3D12_STREAM_OUTPUT_DESC streamOutput = {};
+	streamOutput.pSODeclaration = NULL;
+	streamOutput.NumEntries = 0;
+	streamOutput.pBufferStrides = NULL;
+	streamOutput.NumStrides = 0;
+	streamOutput.RasterizedStream = 0;
+
+	psoDesc.StreamOutput = streamOutput;
+	psoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
+	psoDesc.SampleMask = UINT_MAX;
+	psoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
+	psoDesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
+	psoDesc.InputLayout = { mInputElementDescs.data(), (UINT)mInputElementDescs.size() };
+	psoDesc.IBStripCutValue = D3D12_INDEX_BUFFER_STRIP_CUT_VALUE_DISABLED;
+	psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+	psoDesc.NumRenderTargets = 1;
+	psoDesc.RTVFormats[0] = mBackBufferFormat;
+	psoDesc.DSVFormat = mDepthStencilFormat;
+	psoDesc.SampleDesc.Count = SAMPLE_COUNT;
+	psoDesc.SampleDesc.Quality = mNumQualityLevels - 1;
+	psoDesc.NodeMask = 0;
+
+	D3D12_CACHED_PIPELINE_STATE cachedPSO = {};
+	cachedPSO.pCachedBlob = NULL;
+	cachedPSO.CachedBlobSizeInBytes = 0;
+
+	psoDesc.CachedPSO = cachedPSO;
+	psoDesc.Flags = D3D12_PIPELINE_STATE_FLAG_NONE;
+
+	mDevice->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&mPipelineState));
 }
 
 ID3D12Resource* Game::CurrBackBuffer()
@@ -296,4 +549,9 @@ D3D12_CPU_DESCRIPTOR_HANDLE Game::CurrRenderTargetDescriptor()
 D3D12_CPU_DESCRIPTOR_HANDLE Game::DepthStencilDescriptor()
 {
 	return mDsvHeap->GetCPUDescriptorHandleForHeapStart();
+}
+
+D3D12_CPU_DESCRIPTOR_HANDLE Game::ConstantBufferDescriptor()
+{
+	return mCbvHeap->GetCPUDescriptorHandleForHeapStart();
 }

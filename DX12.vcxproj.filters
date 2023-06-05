@@ -13,6 +13,9 @@
       <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
       <Extensions>cpp;c;cc;cxx;c++;cppm;ixx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
     </Filter>
+    <Filter Include="Shader">
+      <UniqueIdentifier>{f3891f9b-1ca8-41da-89ce-dc8e1c233c4e}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Header\Audio.h">
@@ -34,6 +37,33 @@
       <Filter>Header</Filter>
     </ClInclude>
     <ClInclude Include="Header\Timer.h">
+      <Filter>Header</Filter>
+    </ClInclude>
+    <ClInclude Include="Header\Geometry.h">
+      <Filter>Header</Filter>
+    </ClInclude>
+    <ClInclude Include="Header\Maths.h">
+      <Filter>Header</Filter>
+    </ClInclude>
+    <ClInclude Include="Header\Upload.h">
+      <Filter>Header</Filter>
+    </ClInclude>
+    <ClInclude Include="Header\Util.h">
+      <Filter>Header</Filter>
+    </ClInclude>
+    <ClInclude Include="Header\Struct.h">
+      <Filter>Header</Filter>
+    </ClInclude>
+    <ClInclude Include="Header\Tga.h">
+      <Filter>Header</Filter>
+    </ClInclude>
+    <ClInclude Include="Header\Tex.h">
+      <Filter>Header</Filter>
+    </ClInclude>
+    <ClInclude Include="Header\FrameResource.h">
+      <Filter>Header</Filter>
+    </ClInclude>
+    <ClInclude Include="Header\Camera.h">
       <Filter>Header</Filter>
     </ClInclude>
   </ItemGroup>
@@ -63,5 +93,39 @@
     <ClCompile Include="Source\Timer.cpp">
       <Filter>Source</Filter>
     </ClCompile>
+    <ClCompile Include="Source\Geometry.cpp">
+      <Filter>Source</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Maths.cpp">
+      <Filter>Source</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Util.cpp">
+      <Filter>Source</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Tga.cpp">
+      <Filter>Source</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Tex.cpp">
+      <Filter>Source</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\FrameResource.cpp">
+      <Filter>Source</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Camera.cpp">
+      <Filter>Source</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <FxCompile Include="Shader\PS.hlsl">
+      <Filter>Shader</Filter>
+    </FxCompile>
+    <FxCompile Include="Shader\VS.hlsl">
+      <Filter>Shader</Filter>
+    </FxCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Shader\Struct.hlsli">
+      <Filter>Shader</Filter>
+    </None>
   </ItemGroup>
 </Project>
